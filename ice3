@@ -1,0 +1,171 @@
+/*ICE #3.1
+
+William Dodson
+HCDE 440
+4/14/19
+
+This program uses an Adafruit MPL115A2 and Adafruit DHT sensor to read pressure
+humidity, and temperature values and output them to Serial and an OLED display 
+and an Arduino IO dashboard found here 
+
+//Arduino IO Dashboard URL:https://io.adafruit.com/wdodson/dashboards/ice-3
+
+*/
+
+/************************** Configuration ***********************************/
+
+// edit the config.h tab and enter your Adafruit IO credentials
+// and any additional configuration needed for WiFi, cellular,
+// or ethernet clients.
+
+//Arduino IO Dashboard URL:https://io.adafruit.com/wdodson/dashboards/ice-3
+#include "config.h"0
+
+#include <Adafruit_Sensor.h>     /////
+#include <DHT.h>                    //
+#include <DHT_U.h>                  //                            
+#include <Wire.h>                   //  
+#include <Adafruit_MPL115A2.h>      //////  Initializes the Libraries used in the program                            
+#include <SPI.h>                    //
+#include <Wire.h>                   //  
+#include <Adafruit_GFX.h>           //  
+#include <Adafruit_SSD1306.h>    /////
+    
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 32 // OLED display height, in pixels
+
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+#define OLED_RESET     13 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+Adafruit_MPL115A2 mpl115a2; // defines the mp115a2 sensor object
+
+
+// pin connected to DH22 data line
+#define DATA_PIN 12
+
+// create DHT22 instance
+DHT_Unified dht(DATA_PIN, DHT22);
+
+// set up the 'temperature', 'humidity', 'temp mp11', and 'pressure mp11' feeds on Adafruit IO
+AdafruitIO_Feed *temperature = io.feed("temperature");
+AdafruitIO_Feed *humidity = io.feed("humidity");
+AdafruitIO_Feed *tempmp11 = io.feed("temp mp11");
+AdafruitIO_Feed *pressuremp11 = io.feed("pressure mp11");
+
+
+
+void setup() {
+
+  // start the serial connection
+  Serial.begin(115200);
+  
+  // wait for serial monitor to open
+  while (! Serial);
+    // Checks whether display is connected through I2C
+    if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3C for 128x32
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
+
+  // Show initial display buffer contents on the screen --
+  // the library initializes this with an Adafruit splash screen.
+  display.display();
+  delay(2000); // Pause for 2 seconds
+  // Clear the buffer
+  display.clearDisplay();
+  
+  // initialize dht22
+  dht.begin();
+  // initialize mp1115a2 
+  mpl115a2.begin();
+  
+
+  // connect to io.adafruit.com
+  Serial.print("Connecting to Adafruit IO");
+  io.connect();
+
+  // wait for a connection
+  while (io.status() < AIO_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+
+  // we are connected
+  Serial.println();
+  Serial.println(io.statusText());
+
+}
+
+void loop() {
+
+  // io.run(); is required for all sketches.
+  // it should always be present at the top of your loop
+  // function. it keeps the client connected to
+  // io.adafruit.com, and processes any incoming data.
+  io.run();
+  
+  float pressureKPA = 0, temperatureC = 0, celsius = 0, fahrenheit = 0, humidityDH2 = 0; // initializes float variables for the sensor readings
+  
+  sensors_event_t event; // crerates a new sensor event
+  dht.temperature().getEvent(&event); //reads the dht temperature
+
+  celsius = event.temperature; // assigns temperature to celsius variable
+  fahrenheit = (celsius * 1.8) + 32; // celsius to fahrenheit conversion
+
+  Serial.print("celsius: ");
+  Serial.print(celsius);        // prints celsius temperature to Serial
+  Serial.println("C");
+
+  Serial.print("fahrenheit: ");
+  Serial.print(fahrenheit);     // prints fahrenheit temperature to Serial
+  Serial.println("F");
+
+  // save fahrenheit to Adafruit IO
+  temperature->save(fahrenheit);  
+  
+  // reads the dht sensors humidity
+  dht.humidity().getEvent(&event);
+
+  Serial.print("humidity: ");
+  humidityDH2 = event.relative_humidity; // prints humidity reading to Serial
+  Serial.print(event.relative_humidity);
+  Serial.println("%");
+
+  // save humidity to Adafruit IO
+  humidity->save(humidityDH2);
+  // reads the mp1115a2 sensors pressure reading
+  pressureKPA = mpl115a2.getPressure();  
+// save pressure to Adafruit IO
+  pressuremp11->save(pressureKPA);
+  // reads the dht sensors temperature
+  temperatureC = mpl115a2.getTemperature(); 
+// save mp1115a2 temoperature reading to Adafruit IO
+  tempmp11->save(temperatureC);
+
+
+  outputReading(humidityDH2, pressureKPA, fahrenheit); // sensing sensor readings to OLED display
+  // wait 5 seconds
+  delay(5000);
+
+}
+
+// function outputs readings to OLED display 
+//takes parameters for humidity, pressure, and temperature
+void outputReading(float humidity, float pressure, float temperature) {
+  display.clearDisplay();
+
+  display.setTextSize(1);      // Normal 1:1 pixel scale
+  display.setTextColor(WHITE); // Draw white text
+  display.setCursor(0, 0);     // Start at top-left corner
+  display.cp437(true);         // Use full 256 char 'Code Page 437' font
+
+  display.print("humidity = ");
+  display.println(humidity);      // prints humidity reading to display
+  display.print("pressure = ");
+  display.println(pressure);      // prints pressure reading to display
+  display.print("temperature = ");
+  display.println(temperature);   // prints temperature reading to display
+  display.display();
+}
